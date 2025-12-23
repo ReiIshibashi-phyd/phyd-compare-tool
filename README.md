@@ -24,9 +24,6 @@ pip install -r requirements.txt
 ```bash
 # AWS CLIで認証情報を設定
 aws configure
-
-# または特定のプロファイルを使用
-aws configure --profile myprofile
 ```
 
 ## 使用方法
@@ -47,7 +44,6 @@ S3_BUCKET = 'k-ishibashi-test'  # バケット名
 S3_PREFIX_A = 'data/before/'    # 比較元Prefix
 S3_PREFIX_B = 'data/after/'     # 比較先Prefix
 S3_OUTPUT_PREFIX = 'output/'    # 出力先Prefix
-AWS_PROFILE = None              # AWSプロファイル
 
 # 処理設定
 CHUNK_SIZE = 10000              # チャンクサイズ（行数）
@@ -171,9 +167,6 @@ S3操作に必要な最小限のIAM権限：
 ```bash
 # AWS認証情報を確認
 aws sts get-caller-identity
-
-# プロファイルを確認
-aws configure list --profile myprofile
 ```
 
 ### ファイルが見つからない場合
