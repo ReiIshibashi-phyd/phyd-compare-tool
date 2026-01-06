@@ -52,7 +52,3 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
-
-# 大容量データファイル（必要に応じてコメントアウト）
-# data/before/*.csv
-# data/after/*.csv

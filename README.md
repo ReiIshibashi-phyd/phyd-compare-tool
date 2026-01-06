@@ -4,11 +4,11 @@ S3バケット内の2つのPrefix間でCSVファイルを比較し、差分レ�
 
 ## 機能
 
-- S3上の2つのPrefix（PrefixA, PrefixB）間でCSVファイルを比較
-- 同じファイル名のCSVを自動検出して比較
+- S3上の2つのPrefix（Before, After）間でCSVファイルを比較
+- パターンマッチング（正規表現）によるCSVファイルの自動検出と比較
+- 正規表現パターンで比較ファイルを指定可能（例：`tccontract.*\.csv$`）
 - キー列による突合比較（単一・複数キー対応）
 - 全項目の差分検出（追加/削除/変更）
-- 大容量ファイル対応（自動チャンク処理）
 - 差分レポートをS3に自動出力
 
 ## セットアップ
@@ -39,51 +39,56 @@ jupyter notebook
 ### ノートブック内の設定（セル2）
 
 ```python
-# S3設定
-S3_BUCKET = 'k-ishibashi-test'  # バケット名
-S3_PREFIX_A = 'data/before/'    # 比較元Prefix
-S3_PREFIX_B = 'data/after/'     # 比較先Prefix
-S3_OUTPUT_PREFIX = 'output/'    # 出力先Prefix
-
-# 処理設定
-CHUNK_SIZE = 10000              # チャンクサイズ（行数）
-MEMORY_THRESHOLD_MB = 100       # メモリ閾値（MB）
-
 # ファイル別設定
-FILE_SETTINGS = {
-    'sample.csv': {
-        'key_columns': ['id'],
-        'ignore_columns': ['updated_at']
+FILE_SETTINGS = [
+    {
+        'pattern': r'tccontract.*\.csv$',
+        'has_header': True,
+        'key_columns': ['vin'],
+        'ignore_columns': []
+    },
+    {
+        'pattern': r'run-.*-part-r-\d+$',
+        'has_header': True,
+        'key_columns': ['vin'],
+        'ignore_columns': []
     }
-}
+]
 ```
 
-## テストデータの配置
+## データの配置
 
 ```bash
-# S3にテストファイルをアップロード
-aws s3 cp your_file.csv s3://k-ishibashi-test/data/before/
-aws s3 cp your_file.csv s3://k-ishibashi-test/data/after/
+# 処理日のディレクトリを作成
+PROCESS_DATE=$(date +%Y%m%d)
+
+# S3にファイルをアップロード
+aws s3 cp your_file.csv s3://k-ishibashi-test/${PROCESS_DATE}/before/
+aws s3 cp your_file.csv s3://k-ishibashi-test/${PROCESS_DATE}/after/
 
 # 確認
-aws s3 ls s3://k-ishibashi-test/data/before/
-aws s3 ls s3://k-ishibashi-test/data/after/
+aws s3 ls s3://k-ishibashi-test/${PROCESS_DATE}/before/
+aws s3 ls s3://k-ishibashi-test/${PROCESS_DATE}/after/
 ```
 
-## S3バケット構成例
+## 比較用S3バケット構成
 
 ```
 s3://my-bucket/
-├── data/
-│   ├── before/              # PrefixA（比較元）
+├── 20260106/                # 処理日（YYYYMMDD）
+│   ├── before/              # Before（比較元）
 │   │   ├── sample.csv
 │   │   └── tccontract.csv
-│   └── after/               # PrefixB（比較先）
-│       ├── sample.csv
-│       └── tccontract.csv
-└── output/                  # 差分レポート出力先
-    ├── sample_diff_20250122_120000.csv
-    └── tccontract_diff_20250122_120000.csv
+│   ├── after/               # After（比較先）
+│   │   ├── sample.csv
+│   │   └── tccontract.csv
+│   └── output/              # 差分レポート出力先
+│       ├── sample_diff_20250122_120000.csv
+│       └── tccontract_diff_20250122_120000.csv
+└── 20260107/
+    ├── before/
+    ├── after/
+    └── output/
 ```
 
 ## 出力ファイル
@@ -93,94 +98,25 @@ s3://my-bucket/
 - 内容: key, diff_type, column, baseline_value, candidate_value
 
 ### 差分タイプ
-- `ADDED`: PrefixBに新規追加された行
-- `DELETED`: PrefixAから削除された行
+- `ADDED`: Afterに新規追加された行
+- `DELETED`: Beforeから削除された行
 - `MODIFIED`: 変更された項目
 
-## IAM権限要件
+## 処理フロー
 
-S3操作に必要な最小限のIAM権限：
+### 1. バイナリチェック（MD5ハッシュ）
+- ファイル全体をMD5ハッシュで比較
+- 同一の場合は処理終了
+- 異なる場合は詳細比較へ進む
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject",
-        "s3:ListBucket"
-      ],
-      "Resource": [
-        "arn:aws:s3:::your-bucket-name",
-        "arn:aws:s3:::your-bucket-name/data/*"
-      ]
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "s3:PutObject"
-      ],
-      "Resource": [
-        "arn:aws:s3:::your-bucket-name/output/*"
-      ]
-    }
-  ]
-}
+### 2. キー突合比較
+- ファイルをメモリに読込
+- キー列でソート
+- 削除・追加・変更を検出
+
+### 3. 差分レポート出力
+- 差分をCSVで出力
+- S3に自動アップロード
+- 詳細レポートを表示
+
 ```
-
-## 課題と制約事項
-
-### 現在の課題
-
-1. **大容量ファイル対応** ✅ 実装済
-   - `compare_s3_large.py`でチャンク処理に対応
-   - メモリ閉値を超えるファイルは自動的にチャンク処理
-   - デフォルト: 100MB超でチャンク処理、チャンクサイズ10,000行
-
-2. **並列処理未対応**
-   - 複数ファイルを順次処理するため、ファイル数が多い場合は時間がかかる
-   - 対策: マルチスレッド/マルチプロセス処理の実装
-
-3. **エラーハンドリング**
-   - ネットワークエラー時のリトライ機能なし
-   - 対策: boto3のリトライ設定やエラー時の継続処理
-
-4. **進捗表示**
-   - 大容量ファイル処理時の進捗が不明
-   - 対策: tqdmなどの進捗バーの追加
-
-5. **差分レポートの詳細度**
-   - 統計情報やサマリーレポートが未実装
-   - 対策: 統計レポート機能の追加
-
-### 制約事項
-
-- S3のリージョンは環境変数またはAWS設定に依存
-- CSVファイルのエンコーディングはUTF-8を想定
-- ファイル名が完全一致するもののみ比較対象
-- Prefix末尾のスラッシュ（/）は自動調整されるが、明示的な指定を推奨
-
-## トラブルシューティング
-
-### 認証エラーが発生する場合
-```bash
-# AWS認証情報を確認
-aws sts get-caller-identity
-```
-
-### ファイルが見つからない場合
-```bash
-# S3のファイル一覧を確認
-aws s3 ls s3://my-bucket/data/before/
-
-# Prefixが正しいか確認（末尾のスラッシュに注意）
-```
-
-### メモリエラーが発生する場合
-- ファイルサイズを確認し、大容量の場合は分割処理を検討
-- EC2インスタンスのメモリを増強
-
-## ライセンス
-
-MIT License
