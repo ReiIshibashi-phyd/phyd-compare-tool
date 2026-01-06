@@ -1,9 +1,3 @@
-# 出力ファイル
-output/
-*.csv
-*.xlsx
-*.txt
-
 # Jupyter Notebook
 .ipynb_checkpoints/
 *.ipynb_checkpoints
