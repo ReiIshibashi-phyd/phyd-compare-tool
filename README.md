@@ -95,7 +95,7 @@ s3://my-bucket/
 
 ### 差分レポート（CSV）
 - S3パス: `s3://{bucket}/{output-prefix}/{ファイル名}_diff_{タイムスタンプ}.csv`
-- 内容: key, diff_type, column, baseline_value, candidate_value
+- 内容: key, diff_type, column, before_value, after_value
 
 ### 差分タイプ
 - `ADDED`: Afterに新規追加された行
